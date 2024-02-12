@@ -3,21 +3,14 @@ import torch
 from hedgehogTransformer.hedgehogT import HedgehogTransformer
 
 if __name__ == "__main__":
-    # Model configuration
-    dim = 512  # Dimension of the model
-    depth = 6  # Number of layers in the model
-    heads = 8  # Number of attention heads
-    dim_head = 64  # Dimension of each attention head
-    mlp_dim = 2048  # Dimension of the MLP layer
+    dim = 512
+    depth = 6
+    heads = 8
+    dim_head = 64
+    mlp_dim = 2048
+    vocab_size = 10000
 
-    # Initialize the model
-    model = HedgehogTransformer(dim=dim, depth=depth, heads=heads, dim_head=dim_head, mlp_dim=mlp_dim)
-
-    # Dummy input tensor
-    x = torch.randn(1, 1024, dim)  # Batch size of 1, sequence length of 1024, feature dimension of dim
-
-    # Forward pass
+    model = HedgehogTransformer(dim=dim, depth=depth, heads=heads, dim_head=dim_head, mlp_dim=mlp_dim, vocab_size=vocab_size)
+    x = torch.randint(0, vocab_size, (1, 1024))  # Dummy input
     output = model(x)
-
-    # Print output shape
     print(f"Output shape: {output.shape}")

@@ -1,5 +1,8 @@
+import sys 
+sys.path.append('../')
+
 import torch
-from hedgehogTransformer import HedgehogTransformer
+from hedgehogTransformer.hedgehogT import HedgehogTransformer
 
 
 def test_hedgehog_transformer():
@@ -28,3 +31,4 @@ def test_hedgehog_transformer():
 
 if __name__ == "__main__":
     test_hedgehog_transformer()
+
