@@ -1,6 +1,6 @@
 # Example for testing the softmax mimicry feature map
 import torch
-from hedgehog.hedgehogT import HedgehogTransformer
+from hedgehogTransformer.hedgehogT import HedgehogTransformer
 
 if __name__ == "__main__":
     # Model configuration
