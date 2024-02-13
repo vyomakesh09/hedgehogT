@@ -3,91 +3,101 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 
+class HedgehogFeatureMap(nn.Module):
+    def __init__(self, head_dim: int, activation: str= 'exp'):
+        super().__init__()
+        # Trainable map
+        self.layer = nn.Linear(head_dim, head_dim)
+        self.init_weights()
+
+    def _init_weights_(self):
+        
+        """" Initialize traninable map as identity """
+        nn.init.eye_(self.layer.weight)
+        nn.init.zeros_(self.layer.bias)
+
+    def forward(self, x: torch.Tensor):
+        x = self.layer(x) # shape b, h, l, d
+        return torch.cat([torch.exp(x), torch.exp(-x)], dim=-1)
+
+def softmax_attn(q: torch.Tensor, k: torch.Tensor):
+    """" Get softmax attention weights -> Assume q, k, are both shape 
+            (b, h, 1, d) """
+    scale = q.shape[-1] ** 0.5
+    qk = torch.einsum('bhmd, bhnd->bhmn', q, k) / scale
+    return torch.softmax(qk, dim=-1)
+
+def quadratic_linear_attn(q: torch.Tensor, k: torch.Tensor):
+    """
+        Get linear attention weights 
+        -> Assume q, k are both shape (b, h, 1, d) and feature maps 
+            already applied """
+    qk = torch.einsum('bhmd, bhnd->bhmn', q, k)
+    return qk / qk.sum(dim=-1, keepdim=True)
+
+'''def compute_hedgehog_loss(q: torch.Tensor,
+                            k: torch.Tensor,
+                            hh_mlp_q: HedgehogFeatureMap,
+                            hh_mlp_k: HedgehogFeatureMap):
+        """
+        Compute the attention distillation loss 
+        -> Assume 'soft_label_cross_entropy' is implemented 
+            (aleternatively use KL divergence)
+        -> Assume q and k are the queries and keys of a 
+            pretrained Transformer,
+            via q = self.q_proj(hidden_states)
+        """
+
+        true_attn = softmax_attn(q, k)
+        pred_attn = quadratic_linear_attn(hh_mlp_q(q), hh_mlp_k(k))
+        return soft_label_cross_entropy(pred_attn, true_attn)
+
+'''
+
 class HedgehogAttention(nn.Module):
-    def __init__(self, dim, heads=8, dim_head=64):
-        super().__init__()
-        self.heads = heads
-        self.scale = dim_head ** -0.5
-        self.to_qkv = nn.Linear(dim, dim_head * heads * 3, bias=False)
-        self.to_out = nn.Linear(dim_head * heads, dim)
-        self.mlp = nn.Sequential(
-            nn.Linear(dim_head, dim_head),
-            nn.ReLU(),
-            nn.Linear(dim_head, 1),
-            nn.Sigmoid()
-        )
+    """
+    Sample code for HedgehogAttention, following HuggingFace API 
+    """
 
-    def forward(self, x):
+    def __init__(self, base_attn, training = True):
+        self.base_attn = base_attn 
+
+        # Trainable feature maps 
+        self.mlp_q = HedgehogFeatureMap(base_attn.head_dim)
+        self.mlp_k = HedgehogFeatureMap(base_attn.head_dim)
+
+        # Freeze original attention parameters 
+        for p in self.base_attn.parameters():
+            p.requires_grad = False
+
+        self.q_proj = self.base_attn.q_proj
+        self.k_proj = self.base_attn.k_proj
+
+
+        # Whether we train attentions or not 
+        self.training = training 
+
+    def forward(self, 
+                hidden_states: torch.Tensor, 
+                output_attentions: bool = True,
+                **base_kwargs: any):
         
-        # Squeeze the unnecessary singleton dimension if present
-        # Check if there's a singleton dimension at index 2 and remove it
-        #if x.shape[2] == 1:
-         #   x = x.squeeze(2)  # This adjusts x from [8, 511, 1, 512] to [8, 511, 512]
         
-        if x.dim() > 3:  # Adjust for the edge case where there's a singleton dim
-            x = x.squeeze(2)
+        if self.training:
+            # Compute ground-truth attention weights
+            outputs, true_attns = self.base_attn(
+                hidden_states=hidden_states,
+                output_attentions=True,
+                **base_kwargs
+            )
 
-        print(f'x.shape in before rearrange the forward attention class {x.shape}')
-        b, n, _ = x.shape  # Now this should correctly unpack the dimensions
-        h = self.heads
+            # Compute Hedgehig Featture Maps 
+            q = self.mlp_q(self.q_proj(hidden_states))
+            k = self.mlp_k(self.k_proj(hidden_states))
 
-        qkv = self.to_qkv(x).chunk(3, dim=-1)
-        q, k, v = [rearrange(t, 'b n (h d) -> b h n d', h=h) for t in qkv]
+            pred_attns = quadratic_linear_attn(q, k)
+            
 
-        dots = torch.matmul(q, k.transpose(-2, -1)) * self.scale
-        attn = F.softmax(dots, dim=-1)
-        
-        out = torch.matmul(attn, v)
-        
-        out = rearrange(out, 'b h n d -> b n (h d)')
-        
-        print(f'out.shape after tourch matmul and rearrage {out.shape}')
-        # out = self.to_out(out)
-        # out = out.reshape(b, n, -1)
-        print(f'x.shape after the rearrage in the forward attention class {x.shape}')
-
-        # print(out.shape, x.shape)
-        if out.shape != x.shape:
-            raise ValueError('output shape of attention mechanism\
-                             does not match input shape,\
-                             cannot perform residual connection')                           
-        if out.shape == x.shape:
-            x = out + x
-        else:
-            raise ValueError('Shape mismatch in residual connection')
-        return x
-
-class HedgehogTransformer(nn.Module):
-    def __init__(self, dim, depth, heads, dim_head, mlp_dim, vocab_size):
-        super().__init__()
-        self.embedding = nn.Embedding(vocab_size, dim)
-        self.layers = nn.ModuleList([])
-        for _ in range(depth):
-            self.layers.append(nn.ModuleList([
-                HedgehogAttention(dim, heads=heads, dim_head=dim_head),
-                nn.LayerNorm(dim),
-                nn.Sequential(
-                    nn.Linear(dim, mlp_dim),
-                    nn.ReLU(),
-                    nn.Linear(mlp_dim, dim),
-                ),
-                nn.LayerNorm(dim)
-            ]))
-
-    def forward(self, x):
-        x = self.embedding(x)
-        print(x.shape)
-
-        #if x.shape[2] == 1:
-         #    x = x.squeeze(2)
-        
-
-        for attn, norm1, ff, norm2 in self.layers:
-            # print(attn(x).shape, x.shape)
-            # x_squeeezed = x.squeeze(2)
-            print(f'this is in the forward class of HT {attn(x).shape, x.shape}')
-            x = attn(x) + x
-            x = norm1(x)
-            x = ff(x) + x
-            x = norm2(x)
-        return x
+            if output_attentions:
+                # Hook for attentions 
+                return outputs, (pred_attns, true_attns)
