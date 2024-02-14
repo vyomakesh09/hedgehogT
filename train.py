@@ -15,6 +15,7 @@ os.makedirs(checkpoint_path, exist_ok=True)
 dataset = load_dataset("wikitext", "wikitext-103-v1")
 tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
 
+
 # Function to tokenize and prepare labels
 def tokenize_and_prepare_labels(examples):
     tokenized_inputs = tokenizer(
@@ -28,13 +29,16 @@ def tokenize_and_prepare_labels(examples):
     tokenized_inputs["input_ids"] = tokenized_inputs["input_ids"][:, :-1]
     return {"input_ids": tokenized_inputs["input_ids"], "labels": labels}
 
+
 # Tokenize dataset and set format for PyTorch
 tokenized_datasets = dataset.map(tokenize_and_prepare_labels, batched=True)
 tokenized_datasets.set_format(type="torch", columns=["input_ids", "labels"])
 
 # DataLoader for both training and testing
 train_loader = DataLoader(tokenized_datasets["train"], batch_size=8, shuffle=True)
-test_loader = DataLoader(tokenized_datasets["validation"], batch_size=8)  # Adjust as needed for test set
+test_loader = DataLoader(
+    tokenized_datasets["validation"], batch_size=8
+)  # Adjust as needed for test set
 
 # Model configuration
 vocab_size = tokenizer.vocab_size
@@ -84,11 +88,11 @@ with torch.no_grad():
         outputs = outputs.view(-1, outputs.size(-1))
         labels = labels.view(-1)
         loss = criterion(outputs, labels)
-        
+
         total_loss += loss.item()
         total_correct += (outputs.argmax(dim=1) == labels).sum().item()
         total_samples += labels.size(0)
-    
+
     avg_loss = total_loss / len(test_loader)
     accuracy = total_correct / total_samples
     print(f"Test Loss: {avg_loss}, Accuracy: {accuracy}")

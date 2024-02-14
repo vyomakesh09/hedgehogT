@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from transformers import AutoModel, AutoTokenizer
 from hedgehogTransformer.hht import HedgehogTransformer
 
-'''# Assuming `BaseAttention` is the class for the pre-trained model's attention mechanism
+"""# Assuming `BaseAttention` is the class for the pre-trained model's attention mechanism
 class BaseAttention(nn.Module):
     def __init__(self, head_dim):
         super(BaseAttention, self).__init__()
@@ -42,17 +42,17 @@ else:
 # Print the shapes to verify the output (the shapes depend on your specific implementation details)
 print("Predicted Attention Shape:", pred_attn.shape)
 print("True Attention Shape:", true_attn.shape)
-'''
+"""
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Load tokenizer
-tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
+tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
 
 # Example input text
-input_text = 'Hello, world'
+input_text = "Hello, world"
 
 # Tokenize the input
-tokens = tokenizer.encode(input_text, return_tensors='pt', add_special_tokens=True)
+tokens = tokenizer.encode(input_text, return_tensors="pt", add_special_tokens=True)
 
 # Ensure the model and tokens are on the same device
 tokens = tokens.to(device)
@@ -70,7 +70,7 @@ model = HedgehogTransformer(
 ).to(device)
 
 
-'''# Get model output 
+"""# Get model output 
 output = model(tokens)
 
 # Convert output logits to probabilities 
@@ -79,5 +79,4 @@ probabilities = F.softmax(output, dim=-1)
 # Optionally, get the predicted toekn IDs
 predicted_token_id = torch.argmax(probabilities, dim=-1)
 
-print(predicted_token_id)'''
-
+print(predicted_token_id)"""

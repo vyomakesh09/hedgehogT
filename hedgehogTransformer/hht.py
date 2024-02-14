@@ -28,39 +28,65 @@ class HedgehogAttention(nn.Module):
         self.embed_size = embed_size
         self.heads = heads
         self.head_dim = embed_size // heads
-
-        assert (
-            self.head_dim * heads == embed_size
-        ), "Embedding size needs to be divisible by heads"
+        # Ensure the head dimension is halved if the feature map doubles it
+        self.expanded_head_dim = (
+            self.head_dim * 2
+        )  # Assuming feature map doubles the dimension
 
         self.values = nn.Linear(self.head_dim, self.head_dim, bias=False)
         self.keys = nn.Linear(self.head_dim, self.head_dim, bias=False)
         self.queries = nn.Linear(self.head_dim, self.head_dim, bias=False)
-        self.fc_out = nn.Linear(heads * self.head_dim, embed_size)
+        # Adjust the output linear layer to account for the expanded head dimension
+        self.fc_out = nn.Linear(heads * self.expanded_head_dim, embed_size)
         self.feature_map = HedgehogFeatureMap(self.head_dim)
 
     def forward(self, values, keys, query):
+        # Forward method implementation remains the same until after feature map application
         N = query.shape[0]
         value_len, key_len, query_len = values.shape[1], keys.shape[1], query.shape[1]
 
-        # Split the embedding into self.heads different pieces
+        # Correct reshaping to [Batch, Seq_len, Heads, Head_dim]
+        # Then, linear transformations are applied to each head separately
         values = values.reshape(N, value_len, self.heads, self.head_dim)
         keys = keys.reshape(N, key_len, self.heads, self.head_dim)
         queries = query.reshape(N, query_len, self.heads, self.head_dim)
 
-        values = self.feature_map(self.values(values))
-        keys = self.feature_map(self.keys(keys))
-        queries = self.feature_map(self.queries(queries))
+        """print(
+            f"values, keys, queries after reshaping: {values.shape, keys.shape, queries.shape}"
+        )"""
 
-        # Einsum does matrix multiplication for query and keys for each training example
-        # with optimization of space
+        # After applying the feature map, the dimensionality of heads is now expanded
+        values, keys, queries = [self.feature_map(x) for x in (values, keys, queries)]
+
+        """print(
+            f"values, keys, queries after applying feature map: {values.shape, keys.shape, queries.shape}"
+        )"""
+
+        # Attention calculation remains the same
         attention = torch.einsum("nqhd,nkhd->nhqk", [queries, keys])
-        attention = torch.softmax(attention / (self.embed_size ** (1 / 2)), dim=3)
+        attention = torch.softmax(attention / (self.embed_size ** (1 / 2)), dim=-1)
 
-        out = torch.einsum("nhql,nlhd->nqhd", [attention, values]).reshape(
-            N, query_len, self.heads * self.head_dim
-        )
+        """print(
+            f'attention after einsum of "nhql, nlhd->nqhd", [queries, keys] and softmax(attention / (self.embed_size ** (1 / 2)), dim=-1) attention, values in  hedgehog attention: {attention.size(), values.size()}'
+        )"""
+
+        # Apply attention to the values
+        out = torch.einsum("nhql,nlhd->nqhd", [attention, values])
+
+        """print(
+            f'out after torch.einsum("nhql,nlhd->nqhd", [attention, values]): {out.shape}'
+        )"""
+
+        # Correctly reshape `out` to combine the expanded head dimensions back
+        out = out.reshape(N, query_len, self.heads * self.expanded_head_dim)
+
+        """print(
+            f"out after reshape(N, query_len, self.heads * self.expanded_head_dim): {out.shape}"
+        )"""
+
+        # If necessary, apply a projection layer to reduce dimensionality back to `embed_size`
         out = self.fc_out(out)
+
         return out
 
 
@@ -89,7 +115,7 @@ class TransformerBlock(nn.Module):
         return out
 
 
-'''class PositionalEncoding(nn.Module):
+"""class PositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len=5000):
         super(PositionalEncoding, self).__init__()
         pe = torch.zeros(max_len, d_model)
@@ -105,31 +131,43 @@ class TransformerBlock(nn.Module):
     def forward(self, x):
         x = x + self.pe[: x.size(0), :]
         return x
-'''
+"""
+
+
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model):
         super(PositionalEncoding, self).__init__()
         self.d_model = d_model
 
     def forward(self, x):
+        """print(
+            f"x.shape in positional encoding before pe broadcasted to matdch x batch size : {x.shape}"
+        )"""
+
         seq_len = x.size(1)
-        # Ensure pe is correctly shaped as [1, seq_length, embedding_dim]
-        if self.pe.size(1) < seq_len:
-            # Extend or regenerate pe to accommodate seq_len if needed
-            # This is just a placeholder logic; actual implementation may vary based on your initial pe generation logic
-            pass  # Implement logic to ensure pe covers seq_len
-        
-        pe = self.pe[:, :seq_len, :].to(x.device)
-        
-        print(f'x shape {x.shape}')
-        print(f'pe shape: {pe[:, :seq_len, :].shape}')
-        
+        position = torch.arange(
+            0, seq_len, dtype=torch.float, device=x.device
+        ).unsqueeze(1)
+        div_term = torch.exp(
+            torch.arange(0, self.d_model, 2, device=x.device).float()
+            * (-math.log(10000.0) / self.d_model)
+        )
+
+        pe = torch.zeros(seq_len, self.d_model, device=x.device)
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)  # Add batch dimension
+
+        # Ensure pe is broadcasted to match x's batch size during addition
+        pe = pe.expand(x.size(0), -1, -1)  # Adjust pe to match x's batch size
+
+        """print(
+            f"x.shape in positional encoding after pe broadcasted to matdch x batch size : {x.shape}"
+        )
+        print(f"pe shape after adjusted to match x batch size : {pe.shape}")"""
+
         x = x + pe
         return x
-
-        
-       
-
 
 
 class HedgehogTransformer(nn.Module):
@@ -166,14 +204,10 @@ class HedgehogTransformer(nn.Module):
         self.fc_out = nn.Linear(embed_size, src_vocab_size)
 
     def forward(self, x):
-        N, seq_length = x.shape
-        positions = (
-            torch.arange(0, seq_length).unsqueeze(0).repeat(N, 1).to(self.device)
-        )
-
-        out = self.dropout(self.word_embedding(x) + self.positional_encoding(positions))
+        x = self.dropout(self.word_embedding(x))  # Embedding
+        x = x + self.positional_encoding(x)
 
         for layer in self.layers:
-            out = layer(out, out, out)
+            out = layer(x, x, x)  # Process through Transformer blocks
 
         return self.fc_out(out)
