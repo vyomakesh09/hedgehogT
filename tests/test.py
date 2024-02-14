@@ -1,5 +1,6 @@
-import sys 
-sys.path.append('../')
+import sys
+
+sys.path.append("../")
 
 import torch
 from hedgehogTransformer.hedgehogT import HedgehogTransformer
@@ -14,7 +15,9 @@ def test_hedgehog_transformer():
     mlp_dim = 2048  # Dimension of the MLP layer
 
     # Initialize the model
-    model = HedgehogTransformer(dim=dim, depth=depth, heads=heads, dim_head=dim_head, mlp_dim=mlp_dim)
+    model = HedgehogTransformer(
+        dim=dim, depth=depth, heads=heads, dim_head=dim_head, mlp_dim=mlp_dim
+    )
     model.eval()  # Set the model to evaluation mode
 
     # Generate a batch of dummy input data
@@ -29,6 +32,6 @@ def test_hedgehog_transformer():
     # Print output shape to verify the model's forward pass
     print(f"Output shape: {output.shape}")
 
+
 if __name__ == "__main__":
     test_hedgehog_transformer()
-

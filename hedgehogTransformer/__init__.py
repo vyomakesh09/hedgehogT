@@ -1,1 +1,1 @@
-from hedgehogTransformer.hedgehogT import HedgehogTransformer
+from hedgehogTransformer.hedgehogT import HedgehogAttention
