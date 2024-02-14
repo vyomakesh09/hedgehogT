@@ -107,23 +107,28 @@ class TransformerBlock(nn.Module):
         return x
 '''
 class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, max_len=5000):
+    def __init__(self, d_model):
         super(PositionalEncoding, self).__init__()
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        self.register_buffer('pe', pe.unsqueeze(0))  # Shape [1, max_len, d_model]
+        self.d_model = d_model
 
     def forward(self, x):
-        """
-        x: Tensor, shape [batch_size, seq_length, d_model]
-        """
-        # Correctly slice `self.pe` to match `x`'s seq_length and directly add
-        pe = self.pe[:, :x.size(1), :].to(x.device)  # Ensure device compatibility
+        seq_len = x.size(1)
+        # Ensure pe is correctly shaped as [1, seq_length, embedding_dim]
+        if self.pe.size(1) < seq_len:
+            # Extend or regenerate pe to accommodate seq_len if needed
+            # This is just a placeholder logic; actual implementation may vary based on your initial pe generation logic
+            pass  # Implement logic to ensure pe covers seq_len
+        
+        pe = self.pe[:, :seq_len, :].to(x.device)
+        
+        print(f'x shape {x.shape}')
+        print(f'pe shape: {pe[:, :seq_len, :].shape}')
+        
         x = x + pe
         return x
+
+        
+       
 
 
 
@@ -143,7 +148,7 @@ class HedgehogTransformer(nn.Module):
         self.embed_size = embed_size
         self.device = device
         self.word_embedding = nn.Embedding(src_vocab_size, embed_size)
-        self.positional_encoding = PositionalEncoding(embed_size, max_length)
+        self.positional_encoding = PositionalEncoding(embed_size)
 
         self.layers = nn.ModuleList(
             [
